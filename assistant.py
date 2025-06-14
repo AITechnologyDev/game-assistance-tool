@@ -6,6 +6,12 @@ import numpy as np
 from threading import Thread, Lock
 
 # ======================
+# VERSION INFORMATION
+# ======================
+__version__ = "1.0.0-beta"
+__release_date__ = "2025-14-06"
+
+# ======================
 # CONFIGURATION SETTINGS
 # ======================
 ANTI_RECOIL_TOGGLE_KEY = 'f1'
