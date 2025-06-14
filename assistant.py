@@ -4,320 +4,299 @@ import time
 import cv2
 import numpy as np
 import os
-from threading import Thread, Lock
+import json
 import pytesseract
 from PIL import Image
-
-# ======================
-# VERSION INFORMATION
-# ======================
-__version__ = "1.1.0-beta"
-__release_date__ = "2025-06-15"
+from threading import Thread, Lock
+from llama_cpp import Llama  # For local GGUF models
 
 # ======================
 # CONFIGURATION SETTINGS
 # ======================
+SETUP_HOTKEY = 'ctrl+s'
 ANTI_RECOIL_TOGGLE_KEY = 'f1'
 AIMBOT_TOGGLE_KEY = 'f2'
-HEAD_DETECTION_TOGGLE_KEY = 'f3'
-SHOOT_KEY = 'ctrl'  # Key used for shooting in-game
-ENEMY_COLOR = (0, 0, 255)  # BGR color to detect (red in this example)
-COLOR_TOLERANCE = 50  # Color detection sensitivity
-SCAN_RADIUS = 300  # Pixels around crosshair to search for enemies
-ANTI_RECOIL_STRENGTH = 0.5  # Recoil correction speed (0-1)
-PLAYER_TEAM = 'ct'  # 'ct' or 't' - your team
-HEAD_SCAN_INTERVAL = 0.5  # Seconds between head scans
-HEAD_MATCH_THRESHOLD = 0.7  # Confidence threshold (0-1)
-HEAD_DIRECTORY = "Function/heads"  # Path to head templates
+MONEY_REGION = (100, 50, 200, 40)
+ROUND_REGION = (900, 50, 100, 40)
+MIN_MOTION_SIZE = 500
+AIM_SMOOTHNESS = 0.85
+MODEL_PATH = "models/mistral-7b-instruct-v0.1.Q4_K_M.gguf"  # Local GGUF model
 
 # ======================
 # GLOBAL STATE
 # ======================
+game_info = {"game": "unknown", "team": "unknown"}
+setup_mode = False
 anti_recoil_active = False
 aimbot_active = False
-head_detection_active = False
-shooting = False
-last_mouse_position = pyautogui.position()
 program_running = True
+llm = None  # Will hold our local AI model
 data_lock = Lock()
 
 # ======================
-# HEAD DETECTION SYSTEM
+# AI MODEL MANAGEMENT
 # ======================
-def load_head_templates():
-    """Load head templates from directory structure"""
-    templates = {'ct': [], 't': []}
-    
-    # Create directories if they don't exist
-    os.makedirs(os.path.join(HEAD_DIRECTORY, 'ct'), exist_ok=True)
-    os.makedirs(os.path.join(HEAD_DIRECTORY, 't'), exist_ok=True)
-    
-    for team in ['ct', 't']:
-        team_path = os.path.join(HEAD_DIRECTORY, team)
-        for filename in os.listdir(team_path):
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                img_path = os.path.join(team_path, filename)
-                img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
-                if img is not None:
-                    # Convert to grayscale for better matching
-                    if img.shape[2] == 4:  # Handle alpha channel
-                        mask = img[:,:,3] == 0
-                        img[mask] = [0, 0, 0, 0]
-                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                    templates[team].append(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
-    
-    print(f"Loaded {len(templates['ct'])} CT heads and {len(templates['t'])} T heads")
-    return templates
-
-# Load templates at startup
-HEAD_TEMPLATES = load_head_templates()
-
-def find_head_position():
-    """Detect enemy heads using template matching"""
-    screen_width, screen_height = pyautogui.size()
-    center_x, center_y = screen_width // 2, screen_height // 2
-    
-    # Define search area around crosshair
-    scan_area = (
-        max(0, center_x - SCAN_RADIUS),
-        max(0, center_y - SCAN_RADIUS),
-        min(screen_width, center_x + SCAN_RADIUS),
-        min(screen_height, center_y + SCAN_RADIUS)
-    )
-    
-    # Capture screen region
-    screenshot = pyautogui.screenshot(region=scan_area)
-    screen_img = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
-    
-    # Determine enemy team based on player's team
-    enemy_team = 't' if PLAYER_TEAM == 'ct' else 'ct'
-    best_match = None
-    best_val = 0
-    
-    # Search for enemy heads
-    for template in HEAD_TEMPLATES[enemy_team]:
-        if template.shape[0] > screen_img.shape[0] or template.shape[1] > screen_img.shape[1]:
-            continue
-            
-        # Template matching with different methods
-        methods = [cv2.TM_CCOEFF_NORMED, cv2.TM_CCORR_NORMED]
-        for method in methods:
-            res = cv2.matchTemplate(screen_img, template, method)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-            
-            # For TM_CCOEFF_NORMED and TM_CCORR_NORMED, higher is better
-            if max_val > best_val:
-                best_val = max_val
-                best_loc = max_loc
-                best_template = template
-                best_method = method
-    
-    # Check if we found a valid match
-    if best_val < HEAD_MATCH_THRESHOLD:
-        return None
-    
-    # Calculate head center position
-    h, w = best_template.shape
-    center_x = best_loc[0] + w//2 + scan_area[0]
-    center_y = best_loc[1] + h//2 + scan_area[1]
-    
-    # AI-powered verification using OCR
-    if verify_head_with_ai(screenshot, best_loc, (w, h)):
-        return (center_x, center_y)
-    
-    return None
-
-def verify_head_with_ai(screenshot, location, size):
-    """Use OCR to verify if the detected region contains player text"""
+def load_ai_model():
+    global llm
     try:
-        # Extract the region around the detected head
-        x, y = location
-        w, h = size
-        expanded_region = (
-            max(0, x - 50),
-            max(0, y - 20),
-            min(screenshot.width, x + w + 50),
-            min(screenshot.height, y + h + 20)
+        # Check if model file exists
+        if not os.path.exists(MODEL_PATH):
+            print(f"Model not found at: {MODEL_PATH}")
+            print("Please download a suitable GGUF model and place in models/ folder")
+            return False
+        
+        # Load the model with optimized settings
+        print("Loading AI model...")
+        llm = Llama(
+            model_path=MODEL_PATH,
+            n_ctx=2048,  # Context size
+            n_threads=4,  # Use 4 CPU cores
+            n_gpu_layers=0,  # 0 for CPU-only, set to layers count for GPU offloading
+            verbose=False
         )
-        region_img = screenshot.crop(expanded_region)
-        
-        # Preprocess image for better OCR
-        gray_img = region_img.convert('L')
-        sharp_img = gray_img.filter(ImageFilter.SHARPEN)
-        
-        # Use OCR to detect text
-        text = pytesseract.image_to_string(sharp_img, config='--psm 7')
-        
-        # Check for player-like text (mix of letters and numbers)
-        if re.search(r'[a-zA-Z]{2,}\d+', text):
-            return True
+        print("AI model loaded successfully")
+        return True
     except Exception as e:
-        print(f"AI verification error: {e}")
-    
-    return False
+        print(f"Failed to load AI model: {str(e)}")
+        return False
 
 # ======================
-# ANTI-RECOIL SYSTEM
+# SETUP SYSTEM
 # ======================
-def anti_recoil_controller():
-    global shooting, last_mouse_position
+def save_game_info():
+    global game_info, setup_mode
+    print("\n===== GAME SETUP =====")
+    game_info["game"] = input("Enter game name (e.g., cs2, valorant): ")
+    game_info["team"] = input("Enter your team (e.g., CT, T): ")
     
-    while program_running:
-        if anti_recoil_active and shooting:
-            with data_lock:
-                current_position = pyautogui.position()
-                
-                # Detect recoil (unintended cursor movement)
-                if current_position != last_mouse_position:
-                    screen_center = (pyautogui.size().width // 2, 
-                                    pyautogui.size().height // 2)
-                    
-                    # Calculate correction vector
-                    dx = screen_center[0] - current_position[0]
-                    dy = screen_center[1] - current_position[1]
-                    
-                    # Apply smoothed correction
-                    new_x = current_position[0] + dx * ANTI_RECOIL_STRENGTH
-                    new_y = current_position[1] + dy * ANTI_RECOIL_STRENGTH
-                    
-                    pyautogui.moveTo(new_x, new_y, _pause=False)
-                    last_mouse_position = (new_x, new_y)
+    # Save to config file
+    with open('game_config.json', 'w') as f:
+        json.dump(game_info, f)
+    
+    print(f"Configuration saved: Playing {game_info['game']} as {game_info['team']}")
+    print("=======================")
+    setup_mode = False
+
+# ======================
+# ECONOMY MANAGER (LOCAL AI)
+# ======================
+def get_money_and_round():
+    try:
+        # Capture money region
+        money_img = pyautogui.screenshot(region=MONEY_REGION)
+        money_text = pytesseract.image_to_string(money_img).strip()
+        money_amount = int(''.join(filter(str.isdigit, money_text)))
         
-        time.sleep(0.01)  # 10ms update rate
+        # Capture round region
+        round_img = pyautogui.screenshot(region=ROUND_REGION)
+        round_text = pytesseract.image_to_string(round_img).strip()
+        current_round = int(''.join(filter(str.isdigit, round_text)))
+        
+        return money_amount, current_round
+    except:
+        return None, None
+
+def get_local_ai_recommendation(money, round_num):
+    if not llm:
+        return None
+    
+    try:
+        prompt = f"""
+        <s>[INST] You are an esports coach specializing in {game_info['game']}. 
+        Recommend equipment for:
+        - Team: {game_info['team']}
+        - Money: ${money}
+        - Round: {round_num}/30
+        
+        Consider:
+        1. Current meta strategies
+        2. Expected enemy equipment
+        3. Team economy status
+        4. Map tactics
+        
+        Output in JSON format only:
+        {{
+            "recommendation": "[Buy/Save/Eco]",
+            "primary_weapon": "[Weapon]",
+            "secondary_weapon": "[Pistol]",
+            "equipment": ["Item1", "Item2"],
+            "utility": ["Grenade1", "Grenade2"],
+            "reason": "[Brief explanation]"
+        }}
+        [/INST]
+        """
+        
+        # Generate response
+        response = llm(
+            prompt,
+            max_tokens=256,
+            stop=["</s>"],
+            echo=False,
+            temperature=0.3  # Lower for more consistent results
+        )
+        
+        # Extract JSON from response
+        output = response['choices'][0]['text'].strip()
+        json_start = output.find('{')
+        json_end = output.rfind('}') + 1
+        json_str = output[json_start:json_end]
+        
+        return json.loads(json_str)
+    except Exception as e:
+        print(f"AI error: {str(e)}")
+        return None
 
 # ======================
-# AIMBOT SYSTEM
+# MOTION-BASED AIMBOT
 # ======================
-def find_enemy_position():
+prev_frame = None
+
+def detect_moving_players():
+    global prev_frame
+    frame = np.array(pyautogui.screenshot())
+    
+    if prev_frame is None:
+        prev_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        return []
+    
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    frame_diff = cv2.absdiff(prev_frame, gray_frame)
+    _, thresh = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)
+    
+    # Find moving objects
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    players = []
+    for cnt in contours:
+        if cv2.contourArea(cnt) > MIN_MOTION_SIZE:
+            x, y, w, h = cv2.boundingRect(cnt)
+            players.append((x + w//2, y + h//2))  # Return center points
+    
+    prev_frame = gray_frame
+    return players
+
+def move_mouse_smoothly(target):
+    current_x, current_y = pyautogui.position()
+    target_x, target_y = target
+    
+    # Calculate smoothed movement
+    new_x = current_x + (target_x - current_x) * AIM_SMOOTHNESS
+    new_y = current_y + (target_y - current_y) * AIM_SMOOTHNESS
+    
+    pyautogui.moveTo(new_x, new_y, _pause=False)
+
+def aim_at_nearest_target():
+    targets = detect_moving_players()
+    if not targets:
+        return False
+    
+    # Get screen center
     screen_width, screen_height = pyautogui.size()
-    center_x, center_y = screen_width // 2, screen_height // 2
+    screen_center = (screen_width // 2, screen_height // 2)
     
-    # Define search area around crosshair
-    scan_area = (
-        max(0, center_x - SCAN_RADIUS),
-        max(0, center_y - SCAN_RADIUS),
-        min(screen_width, center_x + SCAN_RADIUS),
-        min(screen_height, center_y + SCAN_RADIUS)
-    )
+    # Find closest target to center
+    closest = min(targets, key=lambda p: np.sqrt((p[0]-screen_center[0])**2 + (p[1]-screen_center[1])**2))
     
-    # Capture screen region
-    screenshot = pyautogui.screenshot(region=scan_area)
-    frame = np.array(screenshot)
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    
-    # Create color mask
-    lower_bound = np.array([
-        max(0, ENEMY_COLOR[0] - COLOR_TOLERANCE),
-        max(0, ENEMY_COLOR[1] - COLOR_TOLERANCE),
-        max(0, ENEMY_COLOR[2] - COLOR_TOLERANCE)
-    ])
-    upper_bound = np.array([
-        min(255, ENEMY_COLOR[0] + COLOR_TOLERANCE),
-        min(255, ENEMY_COLOR[1] + COLOR_TOLERANCE),
-        min(255, ENEMY_COLOR[2] + COLOR_TOLERANCE)
-    ])
-    
-    mask = cv2.inRange(frame, lower_bound, upper_bound)
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.erode(mask, kernel, iterations=1)
-    mask = cv2.dilate(mask, kernel, iterations=2)
-    
-    # Find largest contour
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-    
-    largest_contour = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest_contour) < 100:  # Minimum size threshold
-        return None
-    
-    # Calculate enemy center
-    moments = cv2.moments(largest_contour)
-    enemy_x = int(moments["m10"] / moments["m00"]) + scan_area[0]
-    enemy_y = int(moments["m01"] / moments["m00"]) + scan_area[1]
-    
-    return (enemy_x, enemy_y)
-
-def aimbot_controller():
-    last_detection_time = 0
-    
-    while program_running:
-        if aimbot_active or head_detection_active:
-            current_time = time.time()
-            
-            # Reduce CPU usage when no enemies detected
-            if current_time - last_detection_time > 2.0:  # 2-second cooldown
-                time.sleep(0.1)
-                continue
-            
-            # Use head detection if enabled, otherwise use color detection
-            if head_detection_active:
-                enemy_pos = find_head_position()
-            else:
-                enemy_pos = find_enemy_position()
-                
-            if enemy_pos:
-                last_detection_time = current_time
-                pyautogui.moveTo(enemy_pos[0], enemy_pos[1], 0.15, _pause=False)
-        else:
-            time.sleep(0.1)
+    move_mouse_smoothly(closest)
+    return True
 
 # ======================
 # INPUT HANDLING
 # ======================
 def monitor_inputs():
-    global shooting, anti_recoil_active, aimbot_active, head_detection_active, last_mouse_position
+    global setup_mode, anti_recoil_active, aimbot_active
     
     while program_running:
-        # Update mouse position when not shooting
-        if not shooting:
-            with data_lock:
-                last_mouse_position = pyautogui.position()
-        
         # Toggle features
+        if keyboard.is_pressed(SETUP_HOTKEY):
+            setup_mode = True
+            print("Setup mode activated")
+            time.sleep(1)  # Debounce
+            
         if keyboard.is_pressed(ANTI_RECOIL_TOGGLE_KEY):
             anti_recoil_active = not anti_recoil_active
             print(f"Anti-recoil {'ON' if anti_recoil_active else 'OFF'}")
-            time.sleep(0.5)  # Debounce
+            time.sleep(0.5)
             
         if keyboard.is_pressed(AIMBOT_TOGGLE_KEY):
             aimbot_active = not aimbot_active
-            if aimbot_active:
-                head_detection_active = False
-            print(f"Color Aimbot {'ON' if aimbot_active else 'OFF'}")
+            print(f"Motion Aim {'ON' if aimbot_active else 'OFF'}")
             time.sleep(0.5)
-            
-        if keyboard.is_pressed(HEAD_DETECTION_TOGGLE_KEY):
-            head_detection_active = not head_detection_active
-            if head_detection_active:
-                aimbot_active = False
-            print(f"Head Detection {'ON' if head_detection_active else 'OFF'}")
-            time.sleep(0.5)
-            
-        # Shooting state detection
-        shooting = keyboard.is_pressed(SHOOT_KEY)
+        
         time.sleep(0.01)
+
+# ======================
+# ECONOMY THREAD
+# ======================
+def economy_manager():
+    last_check_time = 0
+    last_recommendation = None
+    
+    while program_running:
+        current_time = time.time()
+        
+        # Check every 15 seconds
+        if current_time - last_check_time > 15:
+            money, round_num = get_money_and_round()
+            
+            if money is not None:
+                # Get AI recommendation
+                recommendation = get_local_ai_recommendation(money, round_num)
+                
+                if recommendation:
+                    last_recommendation = recommendation
+                    print("\n===== ECONOMY RECOMMENDATION =====")
+                    print(f"Round {round_num} | ${money}")
+                    print(f"Recommendation: {recommendation['recommendation']}")
+                    print(f"Primary: {recommendation['primary_weapon']}")
+                    print(f"Secondary: {recommendation['secondary_weapon']}")
+                    print(f"Equipment: {', '.join(recommendation['equipment'])}")
+                    print(f"Utility: {', '.join(recommendation['utility'])}")
+                    print(f"Reason: {recommendation['reason']}")
+                    print("================================")
+            
+            last_check_time = current_time
+        
+        time.sleep(1)
 
 # ======================
 # MAIN PROGRAM
 # ======================
 if __name__ == "__main__":
-    print("===== ADVANCED GAME ASSISTANCE TOOL =====")
-    print(f"Version: {__version__} ({__release_date__})")
+    # Try to load existing config
+    if os.path.exists('game_config.json'):
+        with open('game_config.json', 'r') as f:
+            game_info = json.load(f)
+        print(f"Loaded config: Playing {game_info['game']} as {game_info['team']}")
+    else:
+        print("Game config not found. Press Ctrl+S to set up")
+    
+    # Load AI model
+    if not load_ai_model():
+        print("Running without AI recommendations")
+    
+    print("===== GAME ASSISTANCE TOOL =====")
+    print(f"Press {SETUP_HOTKEY} to configure game/team")
     print(f"Anti-Recoil: Press {ANTI_RECOIL_TOGGLE_KEY} to toggle")
-    print(f"Color Aimbot: Press {AIMBOT_TOGGLE_KEY} to toggle")
-    print(f"Head Detection: Press {HEAD_DETECTION_TOGGLE_KEY} to toggle")
-    print("========================================")
+    print(f"Motion Aim: Press {AIMBOT_TOGGLE_KEY} to toggle")
+    print("================================")
     
     # Start subsystems
-    Thread(target=anti_recoil_controller, daemon=True).start()
-    Thread(target=aimbot_controller, daemon=True).start()
     Thread(target=monitor_inputs, daemon=True).start()
+    Thread(target=economy_manager, daemon=True).start()
     
     # Main loop
     try:
-        while True:
-            time.sleep(1)
+        while program_running:
+            if setup_mode:
+                save_game_info()
+            
+            if aimbot_active:
+                target_acquired = aim_at_nearest_target()
+                if target_acquired and keyboard.is_pressed('space'):
+                    pyautogui.click()
+            
+            time.sleep(0.05)
     except KeyboardInterrupt:
         program_running = False
         print("\nProgram terminated")
