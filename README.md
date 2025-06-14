@@ -1,5 +1,7 @@
-# Game Assistance Tool - Anti-Recoil & Color Aimbot  
-*Created by AiTechnologyDev*  
+## Game Assistance Tool  
+**Version: 1.0.0 Beta**  
+*Created by AiTechnologyDev*
+
 
 ![Python](https://img.shields.io/badge/python-3.6%2B-blue)  
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-lightgrey)](https://github.com/AiTechnologyDev/game-assistance-tool)  
