@@ -5,3 +5,5 @@ numpy==1.26.4
 pillow==10.2.0
 pywin32==306
 python-xlib==0.35; sys_platform == 'linux'
+pytesseract==0.3.10
+pytest==8.1.1
