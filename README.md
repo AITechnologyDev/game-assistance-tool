@@ -1,120 +1,75 @@
-## Game Assistance Tool  
-**Version: 1.1.0 Beta**  
-*Created by AiTechnologyDev*  
+# Game Assistance Tool - Phantom Edition
+**Version 1.0.0** | *Created by AiTechnologyDev*
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)  
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-lightgrey)](https://github.com/AiTechnologyDev/game-assistance-tool)  
-[![Telegram](https://img.shields.io/badge/Telegram-Channel-blue)](https://t.me/AiTechnologyDev)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Advanced game assistance tool featuring smart anti-recoil, color-based aimbot, and AI-enhanced head detection without modifying game files. Perfect for FPS games!
+Advanced game assistance suite featuring:
+- 🎯 Motion-based targeting system
+- 💰 AI-powered economy management
+- 🔫 Adaptive recoil control
+- 🤖 Local GGUF model integration
+- ⚡ Performance optimized design
 
-## Features 🚀
-- **Smart Anti-Recoil System**  
-  Automatically counters weapon recoil while preserving intentional mouse movements
-- **Color-Based Aimbot**  
-  Detects enemies by configurable color signatures with CPU optimization
-- **AI Head Detection**  
-  Uses template matching with OCR verification for precision aiming
-- **Dynamic Performance Tuning**  
-  Automatically reduces CPU load when not in combat
-- **Hotkey Toggle System**  
-  Enable/disable features instantly during gameplay
-- **Cross-Platform Support**  
-  Works with most popular FPS games
+## Features
+- **Local AI Advisor**: Offline economy recommendations
+- **Smart Targeting**: Motion-based enemy detection
+- **Quick Setup**: One-time configuration
+- **Privacy Focused**: No data leaves your computer
+- **Cross-Game**: Works with CS2, Valorant, Apex Legends
 
-## Installation ⚙️
-1. Install Python 3.8+
+## Installation
 ```bash
-python --version
-```
-2. Install Tesseract OCR:
-   - **Windows**: [Installation Guide](https://github.com/UB-Mannheim/tesseract/wiki)
-   - **Linux**: `sudo apt install tesseract-ocr`
-3. Install dependencies:
-```bash
+git clone https://github.com/AiTechnologyDev/game-assistance-tool
+cd game-assistance-tool
 pip install -r requirements.txt
+
+# Download AI model (example):
+mkdir models
+wget -P models/ https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf
 ```
 
-## Configuration 🛠️
-Edit the top section of `assistant.py`:
-```python
-# ======================
-# CONFIGURATION SETTINGS
-# ======================
-ANTI_RECOIL_TOGGLE_KEY = 'f1'      # Toggle anti-recoil
-AIMBOT_TOGGLE_KEY = 'f2'           # Toggle color aimbot
-HEAD_DETECTION_TOGGLE_KEY = 'f3'   # Toggle head detection
-SHOOT_KEY = 'ctrl'                 # Your game's shoot key
-ENEMY_COLOR = (0, 0, 255)          # BGR color of enemy indicators
-COLOR_TOLERANCE = 50               # Color detection sensitivity (0-100)
-SCAN_RADIUS = 300                  # Detection area around crosshair
-ANTI_RECOIL_STRENGTH = 0.5         # Recoil correction strength (0-1)
-PLAYER_TEAM = 'ct'                 # Your team ('ct' or 't')
-HEAD_MATCH_THRESHOLD = 0.7         # Head detection confidence (0-1)
-HEAD_DIRECTORY = "Function/heads"  # Path to head templates
-```
-
-## Head Detection Setup 🎯
-1. Create folder structure:
-```
-Function/
-└── heads/
-    ├── ct/   # Counter-terrorist heads
-    └── t/    # Terrorist heads
-```
-2. Add head images:
-   - Capture enemy head screenshots during gameplay
-   - Save in appropriate team folder (PNG format recommended)
-   - Filename format: `head_{map}_{weapon}.png`
-3. For best results:
-   - Use images with transparent backgrounds
-   - Capture from different angles
-   - Include various helmets/hats
-
-## Usage 🎮
+## Usage
 ```bash
-python assistant.py
-```
-- Press **F1** to toggle Anti-Recoil  
-- Press **F2** to toggle Color Aimbot  
-- Press **F3** to toggle Head Detection  
-- Use configured shoot key during gameplay  
+python src/assistant.py
 
-## Performance Optimization ⚡
-For better performance:
-1. Lower `SCAN_RADIUS` value
-2. Increase color tolerance if needed
-3. Reduce number of head templates
-4. Run as administrator for priority access
+# First-time setup:
+Press Ctrl+S
+Enter game: cs2
+Enter team: CT
 
-## Technical Overview 🧠
-```mermaid
-graph TD
-    A[Main Thread] --> B[Anti-Recoil Controller]
-    A --> C[Aimbot Controller]
-    A --> D[Input Monitor]
-    C --> E[Head Detection]
-    C --> F[Color Detection]
-    E --> G[Template Matching]
-    E --> H[OCR Verification]
-    F --> I[Color Analysis]
+# During gameplay:
+- F1: Toggle recoil control
+- F2: Toggle motion aim
+- Space: Shoot when target locked
 ```
 
-## Legal & Ethical Notice ⚖️
-**This software is for educational purposes only.**  
-- Always comply with game Terms of Service
-- Using cheats in multiplayer games may result in account bans
-- Intended for single-player/sandbox experimentation
-- Developer assumes no responsibility for misuse
+## Configuration
+Edit settings in `src/assistant.py`:
+```python
+# Essential settings
+MONEY_REGION = (100, 50, 200, 40)    # Adjust for your game
+ROUND_REGION = (900, 50, 100, 40)    # Adjust for your game
+MODEL_PATH = "models/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+```
 
-## Support & Community 💬
-Join our Telegram channel for updates:  
-[![Telegram Channel](https://img.shields.io/badge/Telegram-AiTechnologyDev-blue)](https://t.me/AiTechnologyDev)
+## System Requirements
+- OS: Windows 10/11, Linux
+- RAM: 8GB+ (16GB recommended for AI)
+- Storage: 5GB free space (for models)
 
-## License 📄
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Supported AI Models
+| Model | Size | Recommended |
+|-------|------|-------------|
+| [Mistral-7B](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF) | 4.1GB | ★★★★★ |
+| [Phi-2](https://huggingface.co/TheBloke/phi-2-GGUF) | 1.6GB | ★★★★☆ |
+| [TinyLlama](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF) | 0.8GB | ★★★☆☆ |
+
+## Legal Notice
+**This software is for educational purposes only.** Using game assistance tools in multiplayer games may violate Terms of Service. The developer assumes no responsibility for account penalties or bans. Always respect game developers' rules and other players' experiences.
+
+[Contributing](CONTRIBUTING.md) | [License](LICENSE) | [Telegram](https://t.me/AiTechnologyDev)
 
 ---
-
 **Created with ❤️ by AiTechnologyDev**  
-[GitHub](https://github.com/AiTechnologyDev) | [Telegram](https://t.me/AiTechnologyDev)
+*Advanced Game Research Project - v1.0.0*

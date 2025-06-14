@@ -1,0 +1,19 @@
+# Ignore model files
+models/
+
+# Ignore user config
+game_config.json
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/

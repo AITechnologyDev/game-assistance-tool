@@ -1,9 +1,8 @@
+# Core dependencies
 pyautogui==0.9.54
 keyboard==0.13.5
 opencv-python==4.9.0.80
 numpy==1.26.4
 pillow==10.2.0
-pywin32==306
-python-xlib==0.35; sys_platform == 'linux'
 pytesseract==0.3.10
-pytest==8.1.1
+llama-cpp-python==0.2.73
